@@ -1,0 +1,222 @@
+<?php
+
+namespace App\Http\Controllers\auth;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Storage;
+use App\Models\User;
+use Illuminate\Support\Facades\Validator;
+use App\Models\Order;
+
+
+
+use App\Http\Controllers\Controller;
+use Illuminate\Http\Request;
+
+class UserController extends Controller
+{
+            public function showProfile($id)
+        {
+            $viewer = Auth::user();
+            $user = \App\Models\User::findOrFail($id);
+        
+            // Prevent access if viewer is not the owner or not an admin
+            if ($viewer->id !== $user->id && $viewer->role !== 'admin') {
+                return redirect()->route('dashboard')->with('error', 'Unauthorized access.');
+            }
+        
+            return view('profile.show', compact('user'));
+        
+        }
+        public function create()
+        {
+            $roles = ['admin', 'staff', 'tailor', 'artisan', 'customer'];
+            return view('users.create', compact('roles'));
+        }
+       public function store(Request $request)
+{
+   
+    $roles = ['admin', 'staff', 'tailor', 'artisan', 'customer'];
+
+    $request->validate([
+        'name' => 'required|string|max:255',
+        'email' => 'nullable|email|unique:users,email',
+        'phone' => 'nullable|digits:10|unique:users,phone',
+        'role' => 'nullable|string|in:' . implode(',', $roles),
+        'is_active' => 'nullable|boolean',
+        'address' => 'nullable|string|max:255',
+        'country' => 'nullable|string|max:100',
+        'profile_picture' => 'nullable|image|max:2048',
+        'password' => 'nullable|min:6',
+    ]);
+
+    $user = new User();
+    $user->name = $request->name;
+    $user->email = $request->email;
+    $user->phone = $request->phone;
+    $user->role = $request->role ?? 'customer';
+    $user->is_active = $request->is_active ?? false;
+    $user->address = $request->address;
+    $user->country = $request->country;
+    $user->password = Hash::make($request->password ?? 'default123');
+
+    if ($request->hasFile('profile_picture')) {
+        $folder = 'uploads/profile_pictures';
+
+        if (!Storage::disk('public')->exists($folder)) {
+            Storage::disk('public')->makeDirectory($folder);
+        }
+
+        $filename = time() . '_' . str_replace(' ', '_', strtolower($request->name)) . '.' . $request->profile_picture->extension();
+        $path = $request->profile_picture->storeAs($folder, $filename, 'public');
+        $user->profile_picture = 'storage/' . $path;
+    }
+
+    $user->save();
+
+    // 🔀 Conditional response
+    // if ($request->expectsJson()) {
+    //     return response()->json([
+    //         'id' => $user->id,
+    //         'name' => $user->name,
+    //         'phone' => $user->phone,
+    //     ]);
+    // }
+
+    return redirect()->route('users.index')->with('status', 'User created successfully.');
+}   
+public function storeCustomer(Request $request)
+    {
+        // Validate only name and phone
+        $validated = Validator::make($request->all(), [
+            'name' => 'required|string|max:255',
+            'phone' => 'required|digits:10|unique:users,phone',
+        ])->validate();
+
+        // Create user with default values
+        $user = User::create([
+            'name' => $validated['name'],
+            'phone' => $validated['phone'],
+            'role' => 'customer',
+            'password' => Hash::make('123456'), // or generate random
+            'is_active' => true,
+        ]);
+
+        // Return JSON for Alpine
+        return response()->json([
+            'id' => $user->id,
+            'name' => $user->name,
+            'phone' => $user->phone,
+        ]);
+    }
+
+        public function edit($id)
+        {
+            $user = User::findOrFail($id);
+        
+            // Check if the authenticated user is the owner or an admin
+            if (Auth::user()->id !== $user->id && Auth::user()->role !== 'admin') {
+                return redirect()->route('dashboard')->with('error', 'Unauthorized access.');
+            }
+        
+            return view('profile.edit', compact('user'));
+        
+        }
+
+        public function update(Request $request , $id)
+        {
+            $user = User::findOrFail($id);
+            $roles = ['admin', 'staff', 'tailor', 'artisan', 'customer'];
+
+            $request->validate([
+                'name' => 'required|string|max:255',
+                'email' => 'nullable|email|unique:users,email,' . $user->id,
+                'phone' => 'nullable|digits:10|unique:users,phone,' . $user->id,
+                'role' => 'nullable|string|in:' . implode(',', $roles),
+                'is_active' => 'nullable|boolean',
+                'address' => 'nullable|string|max:255',
+                'country' => 'nullable|string|max:100',
+                'profile_picture' => 'nullable|image|max:2048',
+                'password' => 'nullable|min:6|confirmed',
+            ],
+            [
+                'profile_picture.image' => 'The uploaded file must be an image (jpg, png, etc).',
+                'profile_picture.max' => 'Profile picture must not exceed 2 MB in size.',
+            ]);
+
+            $user->name = $request->name;
+            $user->email = $request->email;
+            $user->phone = $request->phone;
+            $user->role = $request->role ?? $user->role;
+            $user->is_active = $request->is_active ?? $user->is_active;
+            $user->address = $request->address;
+            $user->country = $request->country;
+
+            if ($request->filled('password')) {
+                $user->password = Hash::make($request->password);
+            }
+
+            if ($request->hasFile('profile_picture')) {
+                $folder = 'uploads/profile_pictures';
+            
+                // Check if folder exists, create if not
+                if (!Storage::disk('public')->exists($folder)) {
+                    Storage::disk('public')->makeDirectory($folder);
+                }
+            
+                $filename = 'user_' . $user->id . '.' . $request->profile_picture->extension();
+                $path = $request->profile_picture->storeAs($folder, $filename, 'public');
+                $user->profile_picture = 'storage/' . $path;
+            }
+            
+
+            $user->save();
+
+            return redirect()->route('profile.show', ['user' => $user->id])->with('status', 'Profile updated successfully.');
+        }
+
+        public function index(Request $request)
+        {
+            $role = auth()->user()->role;
+            $query = User::query();
+        
+            if ($role === 'staff') {
+                $query->where('role', '!=', 'admin');
+            }
+        
+            if ($request->filled('search')) {
+                $search = $request->search;
+                $query->where(function ($q) use ($search) {
+                    $q->where('name', 'like', "%{$search}%")
+                      ->orWhere('phone', 'like', "%{$search}%");
+                });
+            }
+        
+            $users = $query->paginate(10);
+            return view('users.index', compact('users'));
+        }
+        public function destroy(Request $request, $id)
+{
+    $targetUser = User::findOrFail($id);
+    $currentUser = Auth::user();
+
+    // Prevent deletion of self or admin users
+    if ($currentUser->id === $targetUser->id || $targetUser->role === 'admin') {
+        return redirect()->route('users.index')->with('error', 'You cannot delete this user.');
+    }
+
+    // Prevent deletion if user has related orders
+    $hasOrders = Order::where('user_id', $targetUser->id)->exists();
+
+    if ($hasOrders) {
+        return redirect()->route('users.index')->with('error', 'Cannot delete user. They have existing orders.');
+    }
+
+    // Proceed with deletion
+    $targetUser->delete();
+
+    return redirect()->route('users.index')->with('status', 'User deleted successfully.');
+}
+        
+
+}

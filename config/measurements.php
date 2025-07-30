@@ -1,0 +1,23 @@
+<?php
+return [
+    'Length',
+    'Upper Chest',
+    'Full Chest',
+    'Dot Point',
+    'Waist',
+    'Hip',
+    'Side Cut',
+    'Sleeve Length',
+    'Sleeve Round',
+    'Bicep',
+    'Arm Hole',
+    'Front Shoulder',
+    'Back Shoulder',
+    'Front Neck',
+    'Back Neck',
+    'Pant front length',
+    'Pant Back Length',
+    'Pant Mohri',
+    'Thigh',
+    'Lower Waist (Pant Kammar)',
+];
